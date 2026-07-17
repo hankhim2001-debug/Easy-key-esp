@@ -147,12 +147,18 @@ end)
    end,
 })
 
+
+        end
+    end
+    return closestModel
+end
+
 local Toggle = MainTab:CreateToggle({
    Name = "Aimbot",
    CurrentValue = false,
    Flag = "Toggle1", -- A flag is the identifier for the configuration file; make sure every element has a different flag if you're using configuration saving to ensure no overlaps
    Callback = function(Value)
-   -- Standalone Aimbot Script (LocalScript inside StarterPlayerScripts or StarterCharacterScripts)
+      -- Standalone Aimbot Script (Exact original logic, NO UI)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -160,13 +166,12 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
---// GLOBAL CONFIGURATION (Toggle these from your button script!)
-_G.AimbotEnabled = false 
+--// GLOBAL CONFIGURATION (Toggle from your button script)
+_G.AimbotEnabled = false
 _G.TeamCheck = false
 _G.TargetPart = "Head"
-_G.FovRadius = 300 -- How close they need to be to the center of your screen to lock on
 
---// GET VALID TARGETS
+--// SCAN WORKSPACE FOR VALID TARGETS
 local function getTargets()
     local targets = {}
     
@@ -195,56 +200,51 @@ local function getTargets()
     return targets
 end
 
---// FIND TARGET CLOSEST TO THE CENTER OF YOUR SCREEN
-local function getClosestTargetToScreenCenter()
+-- Find closest target based on 3D distance (The original method you liked)
+local function getClosestTarget()
     local targets = getTargets()
     local closestModel = nil
-    local shortestScreenDistance = _G.FovRadius
+    local shortestDistance = math.huge
     
-    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = myChar.HumanoidRootPart.Position
     
     for _, char in ipairs(targets) do
         local targetPart = char:FindFirstChild(_G.TargetPart)
         local hum = char:FindFirstChildOfClass("Humanoid")
         
         if targetPart and hum and hum.Health > 0 then
-            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-            
-            if onScreen then
-                local screenPos2D = Vector2.new(screenPos.X, screenPos.Y)
-                local distToCenter = (screenPos2D - screenCenter).Magnitude
-                
-                if distToCenter < shortestScreenDistance then
-                    shortestScreenDistance = distToCenter
-                    closestModel = char
-                end
+            local dist = (targetPart.Position - myPos).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closestModel = char
             end
         end
     end
     return closestModel
 end
 
---// BACKEND LOCK-ON LOOP
-RunService:BindToRenderStep("MobileAimbotLockBackend", Enum.RenderPriority.Camera.Value + 1, function()
+--// ORIGINAL SNAP LOCK LOOP
+RunService:BindToRenderStep("MobileAimbotLock", Enum.RenderPriority.Camera.Value + 1, function()
     local myChar = LocalPlayer.Character
     if not myChar then return end
     
     local humanoid = myChar:FindFirstChildOfClass("Humanoid")
     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
     
-    if _G.AimbotEnabled and myRoot and humanoid then
-        local target = getClosestTargetToScreenCenter()
-        
-        if target then
+    if _G.AimbotEnabled then
+        local target = getClosestTarget()
+        if target and myRoot and humanoid then
             local targetPart = target:FindFirstChild(_G.TargetPart)
             if targetPart then
-                -- Disable auto-rotate so mobile movement joystick doesn't fight the camera
+                -- Disable mobile joystick auto-rotation so it doesn't break camera lock
                 humanoid.AutoRotate = false
                 
-                -- Snap camera directly to target
+                -- Snap camera directly to target head coordinate
                 Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
                 
-                -- Snap character root to face the target
+                -- Snap character root to face the target coordinate
                 local flatTargetPos = Vector3.new(targetPart.Position.X, myRoot.Position.Y, targetPart.Position.Z)
                 myRoot.CFrame = CFrame.new(myRoot.Position, flatTargetPos)
                 return
@@ -252,7 +252,7 @@ RunService:BindToRenderStep("MobileAimbotLockBackend", Enum.RenderPriority.Camer
         end
     end
     
-    -- Restore normal movement controls when aimbot is off or no target is found
+    -- Restore normal joystick control if Aimbot is turned off or target is lost
     if humanoid and not humanoid.AutoRotate then
         humanoid.AutoRotate = true
     end
